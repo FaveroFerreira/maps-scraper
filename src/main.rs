@@ -1,16 +1,44 @@
 use std::time::Duration;
 
-use thirtyfour::{prelude::WebDriverResult, By, DesiredCapabilities, Key, WebDriver};
+use thirtyfour::{By, DesiredCapabilities, Key, WebDriver};
+
+use crate::error::Error;
+
+mod database;
+mod environment;
+mod error;
 
 #[tokio::main]
-async fn main() -> WebDriverResult<()> {
+async fn main() -> Result<(), Error> {
+    let env = environment::load_env_vars();
+
+    let db = database::init_db(env).await;
+
+    let search_parameters = database::load_search_parameters(&db).await?;
+
+    for search_parameter in search_parameters {
+        let interest_points = search_parameter
+            .interest_points
+            .split(',')
+            .collect::<Vec<&str>>();
+
+        for interest_point in interest_points {
+            perform_scrape(
+                &search_parameter.city,
+                &search_parameter.state,
+                &interest_point,
+            )
+            .await
+            .unwrap()
+        }
+    }
+
+    Ok(())
+}
+
+async fn perform_scrape(city: &str, state: &str, interest_point: &str) -> Result<(), Error> {
     let caps = DesiredCapabilities::firefox();
     let driver = WebDriver::new("http://localhost:4444", caps).await?;
-
-    // system imput
-    let city = "Passo Fundo";
-    let state = "RS";
-    let interest_point = "Hotel";
 
     // normalization
     let interest_point = interest_point.replace(" ", "+");
@@ -24,7 +52,7 @@ async fn main() -> WebDriverResult<()> {
     container.click().await?;
 
     loop {
-        let _ = tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
         let container = driver.find_all(By::ClassName("hfpxzc")).await?;
 
